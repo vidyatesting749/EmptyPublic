@@ -1,0 +1,126 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Migration
+env:
+  US_API_Sandbox: https://rest.apisandbox.zuora.com
+  NA_API_Sandbox: https://rest.sandbox.na.zuora.com
+  EU_API_Sandbox: https://rest.sandbox.eu.zuora.com
+  US_Central_Sandbox: https://rest.test.zuora.com
+  US_Production: https://rest.zuora.com
+  EU_Production: https://rest.eu.zuora.com
+  NA_Production: https://rest.na.zuora.com
+  US_Performance_Test: https://rest.pt1.zuora.com
+  Staging: https://rest-staging2.zuora.com
+  EU_Central_Sandbox: https://rest.test.eu.zuora.com
+  US_Developer_Sandbox: https://rest.test.zuora.com
+  EU_Developer_Sandbox: https://rest.test.eu.zuora.com
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  #push:
+   # branches: 
+    #- main
+  pull_request:
+    branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      migrationName:
+        type: string
+        required: true
+        default: ''
+        description: 'Deployment name'
+      clientId:
+        type: string
+        required: true
+        default: 'afb061ef-81a1-41d5-9ef3-08123d9ee306'
+        description: 'Target Tenant client id'
+      secretKey:
+        type: string
+        required: true
+        default: 'y=J6oenMy35ThuJmiZfkRO3Klzh4L+9tjkiYWTxJV'
+        description: 'Target Tenant secret key'
+      environment:
+        type: choice
+        required: true
+        default: 'Stage'
+        description: 'Target Tenant environment'
+        options:
+        - Staging
+        - US_API_Sandbox
+        - NA_API_Sandbox
+        - EU_API_Sandbox
+        - US_Central_Sandbox
+        - EU_Central_Sandbox
+        - US_Production
+        - NA_Production
+        - EU_Production
+      tenantId:
+        type: string
+        required: true
+        default: '9430'
+        description: 'Target Tenant Id'
+      entityId:
+        type: string
+        required: true
+        default: '2c92c8fe-6a24-d8b0-016a-288ca1bc055d'
+        description: 'Target Tenant Entity Id'
+      userId:
+        type: string
+        required: true
+        default: '2c92c8fe6a24d8b0016a288ca212055f'
+        description: 'Target Tenant user id'
+      filePath:
+        type: string
+        required: true
+        default: ''
+        description: 'Template File Path:'
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+
+      - name: Install curl
+        run: sudo apt update && sudo apt install -y curl
+        
+      # Runs a set of commands using the runners shell
+
+      - name: Call OAuth API
+        id: oauth
+        run: |
+          envi=$${{inputs.environment}}
+          endpoint="/oauth/token"
+          newEndPoint="$envi$endpoint"
+          oauth_response=$(curl --location ${newEndPoint} \
+            --header 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode 'client_id=${{inputs.clientId}}' \
+            --data-urlencode 'client_secret=${{inputs.secretKey}}' \
+            --data-urlencode 'grant_type=client_credentials' | jq -r '.access_token')
+          echo "::set-output name=token::$oauth_response"
+
+      - name: Initiate Deploy
+        id: upload
+        run: |
+          oauth_token="${{ steps.oauth.outputs.token }}"
+          envi=$${{inputs.environment}}
+          endpoint="/deployment-manager/deployments/templates?name=$${{inputs.migrationName}}&description=$${{inputs.migrationName}}&comments=$${{inputs.migrationName}}&sendEmail=false&emails=ssankarapandi%40zuora.com"
+          newEndPoint="$envi$endpoint"
+          curl --location ${newEndPoint} \
+            --header 'zuora-tenant-id: ${{inputs.tenantId}}' \
+            --header 'zuora-user-id: ${{inputs.userId}}' \
+            --header 'Zuora-Entity-Ids: ${{inputs.entityId}}' \
+            --header "Authorization: Bearer $oauth_token" \
+            --form 'template=@"${{inputs.filePath}}"'
+
+      - name: Deploy Triggered 
+        run: |
+          echo "Deployment of the golden template is triggered."
